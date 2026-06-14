@@ -1,0 +1,21 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Project data artifacts (downloadable / generated — not source)
+data/models/*.task
+data/sessions/*.npz
+data/memes/*
+data/labels/*
+data/embeddings/*
+!**/.gitkeep
+
+# macOS
+.DS_Store
