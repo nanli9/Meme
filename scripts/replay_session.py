@@ -22,7 +22,8 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from capture.pose_mediapipe import NUM_CHANNELS, NUM_JOINTS, draw_skeleton  # noqa: E402
+from capture.pose_mediapipe import NUM_CHANNELS, NUM_JOINTS  # noqa: E402
+from capture.skeleton import draw_full_skeleton  # noqa: E402
 
 SESSION_DIR = Path(__file__).resolve().parent.parent / "data" / "sessions"
 
@@ -39,7 +40,7 @@ def find_latest_session() -> Path:
 def load_window(path: Path) -> dict:
     data = np.load(path, allow_pickle=True)
     landmarks = data["landmarks"]
-    if landmarks.ndim != 3 or landmarks.shape[1:] != (NUM_JOINTS, NUM_CHANNELS):
+    if landmarks.ndim != 3 or landmarks.shape[2] != NUM_CHANNELS or landmarks.shape[1] < NUM_JOINTS:
         raise ValueError(f"Unexpected landmarks shape {landmarks.shape} in {path}")
     return {
         "timestamp": float(data["timestamp"]),
@@ -81,7 +82,7 @@ def replay(win: dict, *, canvas: int = 720, speed: float = 1.0) -> None:
             # Map torso-normalized coords (~[-1.5, 1.5]) back into [0,1] for display.
             coords[:, 0] = coords[:, 0] * 0.25 + 0.5
             coords[:, 1] = coords[:, 1] * 0.25 + 0.5
-        draw_skeleton(frame, coords, visibility_threshold=0.5)
+        draw_full_skeleton(frame, coords, visibility_threshold=0.5)
         cv2.putText(frame, f"frame {t+1}/{lm.shape[0]}", (10, 30),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 1, cv2.LINE_AA)
         cv2.imshow("skeleton replay", frame)

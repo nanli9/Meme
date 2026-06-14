@@ -16,12 +16,14 @@ import time
 
 import cv2
 
-from capture.pose_mediapipe import (
-    DEFAULT_MODEL_PATH,
-    PoseEstimator,
-    count_visible,
-    draw_skeleton,
+from capture.pose_mediapipe import DEFAULT_MODEL_PATH, count_visible, draw_skeleton
+from capture.skeleton import (
+    FULL_JOINT_NAMES,
+    NUM_FULL_JOINTS,
+    FullPoseEstimator,
+    draw_full_skeleton,
 )
+from capture.pose_mediapipe import NUM_JOINTS, PoseEstimator
 from capture.webcam import Webcam, WebcamError
 from features.skeleton_buffer import WINDOW_SIZE, SkeletonBuffer
 
@@ -41,12 +43,25 @@ def main() -> None:
     p.add_argument("--vis", type=float, default=0.5, help="Visibility threshold for drawing/counting.")
     p.add_argument("--normalize", action="store_true", help="Torso-normalize saved windows.")
     p.add_argument("--no-mirror", action="store_true", help="Disable selfie-view mirroring.")
+    p.add_argument("--no-hands", action="store_true", help="Body only (skip finger landmarks).")
     p.add_argument("--width", type=int, default=1280)
     p.add_argument("--height", type=int, default=720)
     args = p.parse_args()
 
-    estimator = PoseEstimator(model_path=args.model, visibility_threshold=args.vis)
-    buffer = SkeletonBuffer(maxlen=WINDOW_SIZE)
+    use_hands = not args.no_hands
+    if use_hands:
+        estimator = FullPoseEstimator(visibility_threshold=args.vis, model_path=args.model)
+        num_joints, joint_names = NUM_FULL_JOINTS, FULL_JOINT_NAMES
+        draw = draw_full_skeleton
+    else:
+        estimator = PoseEstimator(model_path=args.model, visibility_threshold=args.vis)
+        num_joints, joint_names = NUM_JOINTS, tuple()  # default body names in buffer
+        draw = draw_skeleton
+
+    buffer = (
+        SkeletonBuffer(maxlen=WINDOW_SIZE, num_joints=num_joints, joint_names=joint_names)
+        if use_hands else SkeletonBuffer(maxlen=WINDOW_SIZE)
+    )
     flash_until = 0.0
     flash_msg = ""
 
@@ -69,12 +84,12 @@ def main() -> None:
 
             landmarks = estimator.process(frame, int(time.time() * 1000))
             buffer.append(landmarks)
-            draw_skeleton(frame, landmarks, visibility_threshold=args.vis)
+            draw(frame, landmarks, visibility_threshold=args.vis)
 
             visible = count_visible(landmarks, args.vis)
             _hud(frame, [
                 f"FPS: {cam.fps:4.1f}",
-                f"Visible landmarks: {visible} / 13",
+                f"Visible landmarks: {visible} / {num_joints}",
                 f"Buffer: {len(buffer)} / {WINDOW_SIZE}",
                 "s = save window   q = quit",
             ])

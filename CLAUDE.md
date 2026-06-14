@@ -65,6 +65,11 @@ meme-motion/
   - `scale = distance(left_shoulder, right_shoulder)`
   - `normalized_joint = (joint - origin) / scale`
 - Handle missing/low-visibility landmarks gracefully — never crash.
+- **Hands extension (added on request):** an optional MediaPipe Hands layer appends 21
+  left + 21 right hand landmarks after the 13 body joints → a 55-joint skeleton
+  (`[0:13]` body, `[13:34]` left hand, `[34:55]` right hand). Body pose stays primary;
+  hands are in the same torso-normalized frame. Body-only mode (J=13) is still supported.
+  Hand points use the hand's detection confidence as their visibility channel.
 
 ## Meme sourcing (read before building the DB)
 

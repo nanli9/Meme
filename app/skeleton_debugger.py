@@ -21,7 +21,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import numpy as np
 import streamlit as st
 
-from capture.pose_mediapipe import PoseEstimator, count_visible, draw_skeleton
+from capture.pose_mediapipe import count_visible
+from capture.skeleton import (
+    FULL_JOINT_NAMES,
+    NUM_FULL_JOINTS,
+    FullPoseEstimator,
+    draw_full_skeleton,
+)
 from capture.webcam import Webcam, WebcamError
 from features.skeleton_buffer import WINDOW_SIZE, SkeletonBuffer
 
@@ -40,9 +46,9 @@ with st.sidebar:
 
 
 # --- Resource setup (persisted across reruns) ------------------------------
-@st.cache_resource(show_spinner="Loading pose model…")
-def get_estimator(vis_threshold: float) -> PoseEstimator:
-    return PoseEstimator(visibility_threshold=vis_threshold)
+@st.cache_resource(show_spinner="Loading pose + hand models…")
+def get_estimator(vis_threshold: float) -> FullPoseEstimator:
+    return FullPoseEstimator(visibility_threshold=vis_threshold)
 
 
 def get_webcam(device: int) -> Webcam:
@@ -56,7 +62,9 @@ def get_webcam(device: int) -> Webcam:
 
 
 if "buffer" not in st.session_state:
-    st.session_state.buffer = SkeletonBuffer(maxlen=WINDOW_SIZE)
+    st.session_state.buffer = SkeletonBuffer(
+        maxlen=WINDOW_SIZE, num_joints=NUM_FULL_JOINTS, joint_names=FULL_JOINT_NAMES
+    )
 if "saved" not in st.session_state:
     st.session_state.saved = []
 
@@ -74,7 +82,7 @@ saved_box = st.empty()
 
 def render_metrics(fps: float, visible: int, buf_len: int) -> None:
     fps_box.metric("FPS", f"{fps:4.1f}")
-    vis_box.metric("Visible landmarks", f"{visible} / 13")
+    vis_box.metric("Visible landmarks", f"{visible} / {NUM_FULL_JOINTS}")
     buf_box.metric("Buffer length", f"{buf_len} / {WINDOW_SIZE}")
 
 
@@ -92,7 +100,7 @@ def live_view(device: int, vis_threshold: float, normalize: bool, target_fps: in
         status_box.error(str(e))
         return
     estimator = get_estimator(vis_threshold)
-    estimator.visibility_threshold = vis_threshold
+    estimator.pose.visibility_threshold = vis_threshold
 
     ok, frame = cam.read()
     if not ok or frame is None:
@@ -103,7 +111,7 @@ def live_view(device: int, vis_threshold: float, normalize: bool, target_fps: in
     landmarks = estimator.process(frame, int(time.time() * 1000))
     buffer.append(landmarks)
 
-    overlay = draw_skeleton(frame.copy(), landmarks, visibility_threshold=vis_threshold)
+    overlay = draw_full_skeleton(frame.copy(), landmarks, visibility_threshold=vis_threshold)
     frame_box.image(overlay, channels="BGR", use_container_width=True)
 
     visible = count_visible(landmarks, vis_threshold)

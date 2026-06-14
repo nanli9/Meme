@@ -25,9 +25,11 @@ _SCALE_EPS = 1e-6
 
 
 def normalize_window(window: np.ndarray) -> np.ndarray:
-    """Torso-normalize a window of shape ``[T, 13, 4]`` (CLAUDE.md conventions).
+    """Torso-normalize a window of shape ``[T, J, 4]`` (CLAUDE.md conventions).
 
-    For each frame::
+    Works for the 13-joint body skeleton and the extended body+hands skeleton alike —
+    the torso anchors live in the first 13 (body) joints, and every joint (hands
+    included) is expressed in the same body-relative frame::
 
         origin = midpoint(left_hip, right_hip)
         scale  = distance(left_shoulder, right_shoulder)
@@ -38,8 +40,10 @@ def normalize_window(window: np.ndarray) -> np.ndarray:
     NaNs/Infs — graceful degradation, never a crash.
     """
     window = np.asarray(window, dtype=np.float32)
-    if window.ndim != 3 or window.shape[1:] != (NUM_JOINTS, NUM_CHANNELS):
-        raise ValueError(f"Expected window of shape [T, {NUM_JOINTS}, {NUM_CHANNELS}], got {window.shape}")
+    if window.ndim != 3 or window.shape[2] != NUM_CHANNELS or window.shape[1] < NUM_JOINTS:
+        raise ValueError(
+            f"Expected window of shape [T, J>={NUM_JOINTS}, {NUM_CHANNELS}], got {window.shape}"
+        )
 
     out = window.copy()
     lh, rh = J["left_hip"], J["right_hip"]
@@ -66,18 +70,29 @@ def normalize_window(window: np.ndarray) -> np.ndarray:
 class SkeletonBuffer:
     """A rolling buffer of the most recent ``maxlen`` skeleton frames."""
 
-    def __init__(self, maxlen: int = WINDOW_SIZE, session_dir: str | Path = DEFAULT_SESSION_DIR) -> None:
+    def __init__(
+        self,
+        maxlen: int = WINDOW_SIZE,
+        session_dir: str | Path = DEFAULT_SESSION_DIR,
+        *,
+        num_joints: int = NUM_JOINTS,
+        joint_names: tuple[str, ...] = JOINT_NAMES,
+    ) -> None:
         self.maxlen = maxlen
         self.session_dir = Path(session_dir)
+        self.num_joints = num_joints
+        self.joint_names = tuple(joint_names)
         self._frames: deque[np.ndarray] = deque(maxlen=maxlen)
 
     def append(self, landmarks: Optional[np.ndarray]) -> None:
-        """Append one `[13, 4]` frame. ``None`` (no detection) becomes an all-missing frame."""
+        """Append one `[num_joints, 4]` frame. ``None`` becomes an all-missing frame."""
         if landmarks is None:
-            landmarks = np.zeros((NUM_JOINTS, NUM_CHANNELS), dtype=np.float32)
+            landmarks = np.zeros((self.num_joints, NUM_CHANNELS), dtype=np.float32)
         landmarks = np.asarray(landmarks, dtype=np.float32)
-        if landmarks.shape != (NUM_JOINTS, NUM_CHANNELS):
-            raise ValueError(f"Expected landmark frame [{NUM_JOINTS}, {NUM_CHANNELS}], got {landmarks.shape}")
+        if landmarks.shape != (self.num_joints, NUM_CHANNELS):
+            raise ValueError(
+                f"Expected landmark frame [{self.num_joints}, {NUM_CHANNELS}], got {landmarks.shape}"
+            )
         self._frames.append(landmarks.copy())
 
     def __len__(self) -> int:
@@ -90,7 +105,7 @@ class SkeletonBuffer:
     def window(self, *, normalize: bool = False) -> np.ndarray:
         """Return the current buffer as a `[T, 13, 4]` array (T = current length)."""
         if not self._frames:
-            return np.zeros((0, NUM_JOINTS, NUM_CHANNELS), dtype=np.float32)
+            return np.zeros((0, self.num_joints, NUM_CHANNELS), dtype=np.float32)
         stacked = np.stack(list(self._frames), axis=0)
         return normalize_window(stacked) if normalize else stacked
 
@@ -129,7 +144,7 @@ class SkeletonBuffer:
             timestamp=np.float64(ts),
             fps=np.float32(fps),
             landmarks=landmarks.astype(np.float32),
-            joint_names=np.array(JOINT_NAMES, dtype=object),
+            joint_names=np.array(self.joint_names, dtype=object),
             normalized=np.bool_(normalize),
         )
         return path
