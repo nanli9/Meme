@@ -11,23 +11,32 @@ intent, and recommends reaction memes. See [`CLAUDE.md`](./CLAUDE.md) for the fu
 ```bash
 uv venv --python 3.11
 uv sync                       # installs deps from pyproject.toml / uv.lock
-bash scripts/download_model.sh   # fetch the MediaPipe Pose Landmarker model
+bash scripts/download_model.sh   # fetch the "full" Pose Landmarker model (or: lite / heavy)
 ```
 
-The pose model (`data/models/pose_landmarker_lite.task`) is git-ignored; the script
+The pose model (`data/models/pose_landmarker_full.task`) is git-ignored; the script
 above downloads it.
 
 ## Run the skeleton debugger
+
+**Recommended — native window (runs at full camera speed, ~30–60 fps):**
+
+```bash
+uv run python -m capture.debug_view            # --device N, --normalize, --no-mirror
+```
+
+Keys: `s` = save the current 60-frame window · `q` / `ESC` = quit.
+
+**Optional — Streamlit GUI** (browser; lower fps because each frame is encoded and
+shipped over the websocket — use the native window for smooth playback):
 
 ```bash
 uv run streamlit run app/skeleton_debugger.py
 ```
 
-Toggle **Run webcam** in the sidebar. You'll see:
-
-- the live webcam feed with the 13-joint skeleton overlay,
-- live **FPS**, count of **visible landmarks** (/13), and current **buffer length** (/60),
-- a **💾 Save Window** button that writes the last 60 frames to `data/sessions/*.npz`.
+Both show: the live feed with the 13-joint overlay, live **FPS**, count of **visible
+landmarks** (/13), and current **buffer length** (/60), plus a save action that writes
+the last 60 frames to `data/sessions/*.npz`.
 
 ## Replay a saved window offline
 

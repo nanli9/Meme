@@ -80,7 +80,13 @@ SKELETON_EDGES: tuple[tuple[int, int], ...] = (
     (J["nose"], J["right_shoulder"]),
 )
 
-DEFAULT_MODEL_PATH = Path(__file__).resolve().parent.parent / "data" / "models" / "pose_landmarker_lite.task"
+_MODELS_DIR = Path(__file__).resolve().parent.parent / "data" / "models"
+# Prefer the higher-accuracy "full" model; fall back to "lite" if only that is present.
+DEFAULT_MODEL_PATH = (
+    _MODELS_DIR / "pose_landmarker_full.task"
+    if (_MODELS_DIR / "pose_landmarker_full.task").exists()
+    else _MODELS_DIR / "pose_landmarker_lite.task"
+)
 
 
 def landmarks_from_result(result, visibility_threshold: float = 0.0) -> Optional[np.ndarray]:
@@ -180,9 +186,7 @@ class PoseEstimator:
         if not model_path.exists():
             raise FileNotFoundError(
                 f"Pose model not found at {model_path}. Download it with:\n"
-                "  curl -fsSL https://storage.googleapis.com/mediapipe-models/"
-                "pose_landmarker/pose_landmarker_lite/float16/latest/"
-                "pose_landmarker_lite.task -o data/models/pose_landmarker_lite.task"
+                "  bash scripts/download_model.sh"
             )
         self.visibility_threshold = visibility_threshold
 
