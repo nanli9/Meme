@@ -112,11 +112,18 @@ meme-motion/
 
 ## Meme DB / retrieval (Milestone 3 — built)
 
-The retrieval infra in `meme_db/`. One command builds everything:
-`uv run python -m meme_db.build_index --limit 200`.
+The retrieval infra in `meme_db/`. One command builds everything (default: MemeCap ~5.8k):
+`uv run python -m meme_db.build_index` (or `--source memecap,templates --limit 0` to
+combine; `--source not-lain --limit 200` for a fast small build). Embedding is chunked
+from disk (`MemeEmbedder.embed_image_paths`) so large builds don't hold thousands of
+images open at once.
 
-- `load_dataset.py` — pulls a HF subset (default `not-lain/meme-dataset`), saves images to
-  `data/memes/`. `--source`/`--limit` swap datasets without touching the rest.
+- `load_dataset.py` — pulls HF meme source(s), saves images to `data/memes/`. **Default is
+  now MemeCap** (`Leonardo6/memecap`, ~5.8k real memes with rich captions). Handles
+  generic `image`/`text` columns, an image under `local_path`, and MemeCap's nested
+  `messages`+`images` schema. Aliases: `memecap`, `memetion` (~7k, image-only),
+  `templates` (~1k named formats), `not-lain` (~300). `--source a,b,c` combines sources
+  (~14k total); `--limit 0` = whole dataset. Avoid the `hateful_memes` sets (off-theme).
 - `embed_memes.py` — `MemeEmbedder` (OpenCLIP `ViT-B-32 / laion2b_s34b_b79k`, image+text,
   L2-normalized so inner product = cosine) and `VectorIndex`. **`VectorIndex` uses FAISS
   when importable and falls back to an identical exact NumPy cosine search otherwise**

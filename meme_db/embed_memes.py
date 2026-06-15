@@ -139,6 +139,26 @@ class MemeEmbedder:
     def embed_image(self, image) -> np.ndarray:
         return self.embed_images([image])[0]
 
+    def embed_image_paths(self, paths, batch_size: int = 32) -> np.ndarray:
+        """Embed images from disk -> `[N, D]`, opening + closing each file per batch.
+        Preferred for large builds: never holds thousands of images open at once (which
+        leaked semaphores / risked OOM on the ~6k MemeCap build)."""
+        from PIL import Image
+
+        torch = self._torch
+        out: list[np.ndarray] = []
+        for start in range(0, len(paths), batch_size):
+            tensors = []
+            for p in paths[start : start + batch_size]:
+                with Image.open(p) as im:
+                    tensors.append(self.preprocess(im.convert("RGB")))
+            with torch.no_grad():
+                feats = self.model.encode_image(torch.stack(tensors).to(self.device))
+            out.append(feats.float().cpu().numpy())
+        if not out:
+            return np.empty((0, self.dim), np.float32)
+        return _l2_normalize(np.concatenate(out, axis=0))
+
     def embed_text(self, texts) -> np.ndarray:
         """Embed a string or list of strings -> `[N, D]` (or `[D]` for a single string)."""
         torch = self._torch

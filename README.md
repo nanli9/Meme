@@ -94,8 +94,14 @@ with OpenCLIP, auto-labels reaction tags (CLIP zero-shot), and writes SQLite met
 a vector index. First run downloads the CLIP weights (~600 MB) and the dataset.
 
 ```bash
-uv run python -m meme_db.build_index --limit 200      # --source <hf-dataset> to swap datasets
+uv run python -m meme_db.build_index                  # default: MemeCap, ~5.8k memes
+uv run python -m meme_db.build_index --source memecap,templates,not-lain   # combine -> ~7k
+uv run python -m meme_db.build_index --source not-lain --limit 200         # small/fast
 ```
+
+Source aliases: `memecap` (~5.8k, default), `memetion` (~7k, image-only), `templates`
+(~1k named formats), `not-lain` (~300). Comma-separate to combine; `--limit 0` = whole
+dataset, or set a per-source cap. Any other HF dataset id works too.
 
 Then query it with an expressive-intent phrase (top-5 cosine, joined to metadata):
 

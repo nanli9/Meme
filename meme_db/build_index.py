@@ -16,8 +16,6 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from PIL import Image
-
 from meme_db import schema
 from meme_db.auto_label_memes import auto_label_with_embedder
 from meme_db.embed_memes import (
@@ -27,7 +25,7 @@ from meme_db.embed_memes import (
     MemeEmbedder,
     VectorIndex,
 )
-from meme_db.load_dataset import DEFAULT_LIMIT, DEFAULT_SOURCE, load_subset
+from meme_db.load_dataset import DEFAULT_LIMIT, DEFAULT_SOURCE, KNOWN_SOURCES, load_sources
 
 
 def build(
@@ -39,8 +37,8 @@ def build(
     pretrained: str = DEFAULT_PRETRAINED,
 ) -> int:
     """Run the full pipeline and return the number of memes indexed."""
-    print(f"[1/5] Loading subset from {source} (limit={limit}) ...")
-    rows = load_subset(source, limit)
+    print(f"[1/5] Loading meme source(s) {source} (per-source limit={limit or 'all'}) ...")
+    rows = load_sources(source, limit)
     print(f"      {len(rows)} memes downloaded.")
     if not rows:
         raise SystemExit("No memes loaded — nothing to index.")
@@ -49,8 +47,7 @@ def build(
     embedder = MemeEmbedder(model_name, pretrained)
 
     print("[3/5] Embedding meme images ...")
-    images = [Image.open(r["image_path"]) for r in rows]
-    image_vecs = embedder.embed_images(images)
+    image_vecs = embedder.embed_image_paths([r["image_path"] for r in rows])
     print(f"      embeddings: {image_vecs.shape} on {embedder.device}")
 
     print("[4/5] Auto-labeling (CLIP zero-shot reaction tags) ...")
@@ -90,8 +87,10 @@ def build(
 
 def _cli() -> None:
     ap = argparse.ArgumentParser(description="Build the meme DB + vector index.")
-    ap.add_argument("--source", default=DEFAULT_SOURCE)
-    ap.add_argument("--limit", type=int, default=DEFAULT_LIMIT)
+    ap.add_argument("--source", default=DEFAULT_SOURCE,
+                    help="dataset id or alias; comma-separate to combine "
+                         f"(aliases: {', '.join(KNOWN_SOURCES)})")
+    ap.add_argument("--limit", type=int, default=DEFAULT_LIMIT, help="per-source cap (0 = all)")
     ap.add_argument("--db", default=str(schema.DEFAULT_DB_PATH))
     ap.add_argument("--vectors", default=str(DEFAULT_VECTORS_PATH))
     ap.add_argument("--model", default=DEFAULT_MODEL_NAME)
