@@ -125,6 +125,16 @@ def test_wave():
     assert top(w) == "wave"
 
 
+def test_wave_near_face_is_wave_not_thinking():
+    # A hand oscillating left-right right next to the face must read as wave, not thinking
+    # (thinking requires a still hand). Regression test for the motion gate.
+    T = 16
+    w = arms_down(base(T))
+    rx = np.array([0.3 if t % 2 else -0.1 for t in range(T)])  # oscillates near the nose (x~0)
+    _set(w, J["right_wrist"], np.stack([rx, np.full(T, -1.3)], axis=1))  # nose height
+    assert top(w) == "wave"
+
+
 def test_clap():
     T = 12
     w = base(T)
@@ -155,6 +165,14 @@ def test_thumbs_up():
     w = arms_down(base())
     set_hand(w, LEFT_HAND_OFFSET, {"thumb"}, thumb_up=True)
     assert top(w) == "thumbs_up"
+
+
+def test_peace_is_not_pointing():
+    # Index + middle extended (peace) must NOT read as pointing — the suppression uses
+    # max() over the should-be-curled fingers, so an extended middle vetoes pointing.
+    w = arms_down(base())
+    set_hand(w, LEFT_HAND_OFFSET, {"index", "middle"})
+    assert top(w) != "pointing"
 
 
 # --- robustness ------------------------------------------------------------

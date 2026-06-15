@@ -86,40 +86,43 @@ def _score_gestures(f: SkeletonFeatures) -> dict[str, float]:
     s["arms_crossed"] = _ramp(f.wrists_crossed, 0.3, 0.7)
 
     # Hand-to-face: nearest hand to nose. facepalm = at/above nose; thinking = below (chin).
+    # Crucially, only when that hand is fairly STILL — a hand moving near the face is a
+    # wave, not thinking/facepalm.
     face = []
     think = []
-    for d_nose, h_height in ((f.wrist_to_nose_l, f.hand_face_height_l),
-                             (f.wrist_to_nose_r, f.hand_face_height_r)):
+    sides = (
+        (f.wrist_to_nose_l, f.hand_face_height_l, f.wrist_speed_l, f.wrist_x_oscillations_l),
+        (f.wrist_to_nose_r, f.hand_face_height_r, f.wrist_speed_r, f.wrist_x_oscillations_r),
+    )
+    for d_nose, h_height, spd, osc in sides:
+        still = _inv_ramp(spd, 0.05, 0.12) * _inv_ramp(osc, 1, 3)
         near = _inv_ramp(d_nose, 0.3, 0.65)
-        face.append(near * _ramp(h_height, -0.15, 0.2))
-        think.append(_inv_ramp(d_nose, 0.45, 0.85) * _band(h_height, -0.4, 0.35))
+        face.append(near * _ramp(h_height, -0.15, 0.2) * still)
+        think.append(_inv_ramp(d_nose, 0.45, 0.85) * _band(h_height, -0.4, 0.35) * still)
     s["facepalm"] = max(face)
     s["thinking"] = max(think)
 
-    # Wave: a raised hand oscillating laterally.
+    # Wave: a raised hand oscillating laterally (works even when the hand is near the face).
     s["wave"] = max(
-        _ramp(f.wrist_x_oscillations_l, 2, 4) * _ramp(f.wrist_above_shoulder_l, -0.2, 0.4),
-        _ramp(f.wrist_x_oscillations_r, 2, 4) * _ramp(f.wrist_above_shoulder_r, -0.2, 0.4),
+        _ramp(f.wrist_x_oscillations_l, 1.5, 3) * _ramp(f.wrist_above_shoulder_l, -0.3, 0.3),
+        _ramp(f.wrist_x_oscillations_r, 1.5, 3) * _ramp(f.wrist_above_shoulder_r, -0.3, 0.3),
     )
 
     # Clap: wrists repeatedly converge in front of the body.
     s["clap"] = _ramp(f.inter_wrist_convergences, 1.5, 3.0) * _inv_ramp(f.inter_wrist_dx, 0.9, 1.5)
 
-    # Finger gestures on whichever hand is most present.
+    # Finger gestures on whichever hand is most present. Suppression uses max() of the
+    # "should-be-curled" fingers (not mean), so e.g. a peace sign doesn't read as pointing.
     hand = f.best_hand()
     pf = _ramp(hand.present, 0.4, 0.7)
-    idx = hand.extended.get("index", 0.0)
-    thumb = hand.extended.get("thumb", 0.0)
-    others_no_index = (hand.extended.get("middle", 0.0)
-                       + hand.extended.get("ring", 0.0)
-                       + hand.extended.get("pinky", 0.0)) / 3.0
-    others_no_thumb = (idx + hand.extended.get("middle", 0.0)
-                       + hand.extended.get("ring", 0.0)
-                       + hand.extended.get("pinky", 0.0)) / 4.0
+    ext = hand.extended
+    idx, thumb = ext.get("index", 0.0), ext.get("thumb", 0.0)
+    non_index = max(ext.get("middle", 0.0), ext.get("ring", 0.0), ext.get("pinky", 0.0))
+    non_thumb = max(idx, ext.get("middle", 0.0), ext.get("ring", 0.0), ext.get("pinky", 0.0))
 
-    s["open_palm"] = pf * _ramp(hand.extended_count, 3.0, 5.0) * _ramp(hand.spread, 0.5, 1.0)
-    s["pointing"] = pf * _ramp(idx, 0.5, 0.8) * _inv_ramp(others_no_index, 0.25, 0.55)
-    s["thumbs_up"] = pf * _ramp(thumb, 0.5, 0.8) * _ramp(hand.thumb_up, 0.4, 0.7) * _inv_ramp(others_no_thumb, 0.25, 0.55)
+    s["open_palm"] = pf * _ramp(hand.extended_count, 2.5, 4.0) * _ramp(hand.spread, 0.35, 0.8)
+    s["pointing"] = pf * _ramp(idx, 0.4, 0.7) * _inv_ramp(non_index, 0.4, 0.7)
+    s["thumbs_up"] = pf * _ramp(thumb, 0.4, 0.7) * _ramp(hand.thumb_up, 0.3, 0.6) * _inv_ramp(non_thumb, 0.4, 0.7)
 
     return {k: float(round(v, 4)) for k, v in s.items()}
 
