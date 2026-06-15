@@ -86,8 +86,12 @@ meme-motion/
   an index finger AT your own head reads as `thinking` (not `pointing`); a moving hand
   near the face is `wave` (not `thinking`).
 - Features in `features/skeleton_features.py`; hand-tuned rules + `GestureEstimate` +
-  `GestureStabilizer` in `models/motion_rules.py`. Thresholds are hand-tuned (tune with
-  `scripts/label_session.py`), learned later (M6/M7).
+  `GestureStabilizer` in `models/motion_rules.py`.
+- Finger gestures (thumbs_up/pointing/open_palm/peace) now use a **learned classifier**
+  (`models/hand_classifier.py`, small MLP on normalized MediaPipe hand landmarks, trained
+  on HaGRID via `scripts/train_hand_classifier.py` — ~92% held-out). Rules are the
+  fallback when no model file is present; body/motion gestures + middle_finger/pinky stay
+  rule-based. This is Milestone 6 brought forward for hands.
 - Cadence: gestures are computed over the 60-frame window and the displayed label updates
   at most once every 1–2s with hysteresis (no per-frame flicker).
 - Labeled eval: `scripts/eval_hagrid.py` (HaGRID images → finger gestures) and

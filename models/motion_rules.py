@@ -13,10 +13,13 @@ hand-tuned — expect to refine them against real saved windows via
 from __future__ import annotations
 
 import math
+from typing import Optional
 
 from pydantic import BaseModel, Field
 
+from capture.skeleton import LEFT_HAND_OFFSET, RIGHT_HAND_OFFSET
 from features.skeleton_features import SkeletonFeatures, compute_features
+from models.hand_classifier import hand_window_features, load_default
 
 CONFIDENCE_FLOOR = 0.45  # below this, we report `neutral`
 
@@ -74,7 +77,7 @@ def _band(x: float, center: float, half: float) -> float:
 
 
 # --- the rules -------------------------------------------------------------
-def _score_gestures(f: SkeletonFeatures) -> dict[str, float]:
+def _score_gestures(f: SkeletonFeatures, hand_probs: Optional[dict[str, float]] = None) -> dict[str, float]:
     s: dict[str, float] = {}
 
     # Arms raised overhead.
@@ -134,23 +137,35 @@ def _score_gestures(f: SkeletonFeatures) -> dict[str, float]:
 
     _dzs = [d for d in (f.wrist_nose_dz_l, f.wrist_nose_dz_r) if not math.isnan(d)]
     at_head = _inv_ramp(hand.to_nose, 0.15, 0.28) * _depth_ok(min(_dzs) if _dzs else float("nan"))
-    point_raw = pf * only("index", ("middle", "ring", "pinky"))
+
+    if hand_probs is not None:
+        # Learned classifier (trained on HaGRID) drives the finger gestures it covers.
+        point_raw = pf * hand_probs.get("pointing", 0.0)
+        s["thumbs_up"] = pf * hand_probs.get("thumbs_up", 0.0)
+        s["open_palm"] = pf * hand_probs.get("open_palm", 0.0)
+        s["peace"] = pf * hand_probs.get("peace", 0.0)
+    else:
+        # Rule fallback (no model trained yet).
+        point_raw = pf * only("index", ("middle", "ring", "pinky"))
+        s["thumbs_up"] = pf * _ramp(ext.get("thumb", 0.0), 0.4, 0.7) * _ramp(hand.thumb_up, 0.3, 0.6) \
+            * _inv_ramp(max(ext.get(o, 0.0) for o in ("index", "middle", "ring", "pinky")), 0.4, 0.7)
+        s["peace"] = pf * min(_ramp(ext.get("index", 0.0), 0.4, 0.7), _ramp(ext.get("middle", 0.0), 0.4, 0.7)) \
+            * _inv_ramp(max(ext.get("ring", 0.0), ext.get("pinky", 0.0)), 0.4, 0.7)
+        s["open_palm"] = pf * _ramp(hand.extended_count, 2.5, 4.0) * _ramp(hand.spread, 0.35, 0.8)
+
     s["pointing"] = point_raw * (1.0 - at_head)
     s["thinking"] = max(s["thinking"], point_raw * at_head)  # index at own head -> thinking
+    # middle_finger / pinky are not in HaGRID, so they stay rule-based either way.
     s["middle_finger"] = pf * only("middle", ("index", "ring", "pinky"))
     s["pinky"] = pf * only("pinky", ("index", "middle", "ring"))
-    s["peace"] = pf * min(_ramp(ext.get("index", 0.0), 0.4, 0.7), _ramp(ext.get("middle", 0.0), 0.4, 0.7)) \
-        * _inv_ramp(max(ext.get("ring", 0.0), ext.get("pinky", 0.0)), 0.4, 0.7)
-    s["thumbs_up"] = pf * _ramp(ext.get("thumb", 0.0), 0.4, 0.7) * _ramp(hand.thumb_up, 0.3, 0.6) \
-        * _inv_ramp(max(ext.get(o, 0.0) for o in ("index", "middle", "ring", "pinky")), 0.4, 0.7)
-    s["open_palm"] = pf * _ramp(hand.extended_count, 2.5, 4.0) * _ramp(hand.spread, 0.35, 0.8)
 
     return {k: float(round(v, 4)) for k, v in s.items()}
 
 
-def classify(features: SkeletonFeatures) -> GestureEstimate:
-    """Map features to a ranked gesture estimate."""
-    scores = _score_gestures(features)
+def classify(features: SkeletonFeatures, hand_probs: Optional[dict[str, float]] = None) -> GestureEstimate:
+    """Map features to a ranked gesture estimate. If `hand_probs` (from the learned hand
+    classifier) is given, it drives the finger gestures it covers; otherwise rules do."""
+    scores = _score_gestures(features, hand_probs)
     hand = features.best_hand()
     fingers = ([name for name in _FINGER_ORDER if hand.extended.get(name, 0.0) >= 0.5]
                if hand.present >= 0.4 else [])
@@ -162,12 +177,28 @@ def classify(features: SkeletonFeatures) -> GestureEstimate:
                            valid_ratio=features.valid_ratio, scores=scores, fingers=fingers)
 
 
+def _hand_probs_from_window(window, f: SkeletonFeatures, thr: float) -> Optional[dict[str, float]]:
+    """Run the learned hand classifier on the most-present hand, or None if unavailable."""
+    clf = load_default()
+    if not clf.is_available:
+        return None
+    offset = LEFT_HAND_OFFSET if f.left_hand.present >= f.right_hand.present else RIGHT_HAND_OFFSET
+    feats = hand_window_features(window, offset, thr)
+    if feats.size == 0:
+        return None
+    return clf.predict_proba_features(feats)
+
+
 def estimate_gesture(window, *, visibility_threshold: float = 0.5,
-                     assume_normalized: bool = False) -> GestureEstimate:
-    """Convenience: features + classification from a `[T, J, 4]` window."""
+                     assume_normalized: bool = False, use_model: bool = True) -> GestureEstimate:
+    """Convenience: features + classification from a `[T, J, 4]` window. Uses the learned
+    hand classifier for finger gestures when a trained model is present (`use_model`)."""
+    import numpy as np
+    window = np.asarray(window, dtype=np.float32)
     f = compute_features(window, visibility_threshold=visibility_threshold,
                          assume_normalized=assume_normalized)
-    return classify(f)
+    hand_probs = _hand_probs_from_window(window, f, visibility_threshold) if use_model else None
+    return classify(f, hand_probs=hand_probs)
 
 
 class GestureStabilizer:

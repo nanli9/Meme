@@ -58,7 +58,14 @@ uv run python scripts/label_session.py --all      # every saved session
 ```
 
 Rules live in `models/motion_rules.py`; features in `features/skeleton_features.py`.
-Thresholds are hand-tuned — expect to refine them against your own saved poses.
+Finger gestures use a **learned classifier** (`models/hand_classifier.py`) when a trained
+model is present, falling back to rules otherwise. Train it on HaGRID (~92% held-out):
+
+```bash
+uv run python scripts/train_hand_classifier.py   # writes data/models/hand_gesture_clf.joblib
+```
+
+Body/motion gestures stay rule-based and are hand-tuned against your own saved windows.
 
 ### Evaluate against labeled datasets
 

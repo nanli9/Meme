@@ -11,6 +11,7 @@ wheels/
 
 # Project data artifacts (downloadable / generated — not source)
 data/models/*.task
+data/models/*.joblib
 data/sessions/*.npz
 data/memes/*
 data/labels/*

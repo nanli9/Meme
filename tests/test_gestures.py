@@ -66,7 +66,9 @@ def set_hand(win, offset, extended: set, *, wx=0.5, wy=-0.3):
 
 
 def top(win):
-    return estimate_gesture(win, assume_normalized=True).top
+    # Test the RULE path explicitly (use_model=False) so results are deterministic whether
+    # or not a trained hand-classifier model file is present locally.
+    return estimate_gesture(win, assume_normalized=True, use_model=False).top
 
 
 # --- static arm poses ------------------------------------------------------
@@ -179,7 +181,7 @@ def test_thumbs_up():
 def test_fingers_reported_explicitly():
     w = arms_down(base())
     set_hand(w, LEFT_HAND_OFFSET, {"index", "middle"})
-    est = estimate_gesture(w, assume_normalized=True)
+    est = estimate_gesture(w, assume_normalized=True, use_model=False)
     assert "index" in est.fingers and "middle" in est.fingers
     assert "ring" not in est.fingers and "pinky" not in est.fingers
 
