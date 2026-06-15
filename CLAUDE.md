@@ -32,11 +32,12 @@ It is NOT `skeleton -> emotion -> meme`. That framing is brittle and forbidden.
 
 ## Current focus
 
-Milestones 1–3 are DONE and verified. M1 = skeleton debugger + window logger; M2 =
+Milestones 1–4 are DONE and verified. M1 = skeleton debugger + window logger; M2 =
 skeleton features + rule-based gestures (+ a learned hand classifier brought forward);
-M3 = meme DB (subset load → CLIP embeddings → auto-labeling → vector index → retrieval).
-Now on **Milestone 4**: skeleton → meme baseline — turn a gesture into an intent query,
-retrieve + rank memes, and show the first real demo. Do not skip ahead.
+M3 = meme DB (subset load → CLIP embeddings → auto-labeling → vector index → retrieval);
+M4 = skeleton → meme baseline (gesture → intent → retrieve → rank → first live demo).
+Now on **Milestone 5**: face expression module — a *modifier* on the skeleton signal,
+never ground truth, never dominating skeleton (CLAUDE.md rules). Do not skip ahead.
 
 ## Tech stack
 
@@ -144,6 +145,16 @@ score(meme) =
 
 Hand-tune weights first. Learn them from feedback later. Safety penalty is effectively a hard veto.
 
+**Built (M4) in `models/fusion_ranker.py`:** `gesture_to_intent` maps each gesture to a CLIP
+query phrase + expected tags + intensity; `FusionRanker` applies the formula above (CLIP
+min-max-normalized across the pool, greedy-MMR diversity, a recent-duplicate deque so a
+held gesture rotates memes, flagged memes vetoed); `Recommender` wires the OpenCLIP
+embedder + vector index + DB. **Order matters:** build the torch embedder *before* loading
+faiss (faiss-then-torch segfaults on macOS). Weights are constants now; M7 learns them.
+Demo: `scripts/recommend_demo.py` (live webcam) and `scripts/recommend_session.py`
+(camera-free, over saved windows). Known weak spot: some CLIP "magnet" memes match many
+queries — a magnet penalty is an M7 tuning item.
+
 ## Success metric
 
 Per recommendation event: "Did one of the top 5 memes fit the moment?" → **Top-5 Fit Rate**. Optimize this, NOT model accuracy. MVP target 30–40%, decent 50–60%, strong 70%+.
@@ -161,8 +172,8 @@ Per recommendation event: "Did one of the top 5 memes fit the moment?" → **Top
 1. Skeleton debugger + sequence logger ✅ done
 2. Skeleton features + rule-based gestures ✅ done
 3. Meme DB + (subset load →) auto-labeling + CLIP + FAISS ✅ done
-4. Skeleton → meme baseline (first demo) ← **current**
-5. Face expression module (modifier only)
+4. Skeleton → meme baseline (first demo) ✅ done
+5. Face expression module (modifier only) ← **current**
 6. Learned temporal motion encoder
 7. Fusion ranker + feedback loop
 8. Real UI

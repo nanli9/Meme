@@ -3,11 +3,11 @@
 A Mac-first prototype that reads body pose + facial expression, estimates expressive
 intent, and recommends reaction memes. See [`CLAUDE.md`](./CLAUDE.md) for the full design.
 
-> **Status: Milestones 1–3 done.** Skeleton debugger + window logger (M1), skeleton
-> features + rule-based gestures with a learned hand classifier (M2), and the meme
-> retrieval DB — subset load → OpenCLIP embeddings → auto-labeling → vector index →
-> retrieval (M3). Next: M4 wires gestures → meme recommendations (first demo). No face,
-> no learned ranking yet.
+> **Status: Milestones 1–4 done.** Skeleton debugger + window logger (M1), skeleton
+> features + rule-based gestures with a learned hand classifier (M2), the meme retrieval
+> DB — subset load → OpenCLIP embeddings → auto-labeling → vector index → retrieval (M3),
+> and the first end-to-end demo: pose → gesture → intent → ranked meme recommendations
+> (M4). Next: M5 adds facial expression as a modifier. No face, no *learned* ranking yet.
 
 ## Setup
 
@@ -109,6 +109,24 @@ vectors in `data/embeddings/memes.npy`. Vector search uses **FAISS when availabl
 exact NumPy cosine search otherwise** — the pipeline runs either way (faiss-cpu can be
 finicky under uv on Mac). This is pure similarity + metadata; the scoring/diversity/safety
 ranking lands in Milestone 4.
+
+## Recommend memes from your pose (Milestone 4)
+
+The first end-to-end demo: your body gesture → an intent query → retrieval → the hand-tuned
+ranking formula → top-5 memes. Build the meme DB first (above), then:
+
+```bash
+# Live: webcam + skeleton on the left, top-5 recommended memes on the right.
+uv run python scripts/recommend_demo.py            # --device N, --no-mirror, -k 5
+
+# Camera-free: recommend for a saved .npz window (prints the ranking breakdown).
+uv run python scripts/recommend_session.py --all   # or a path; --show opens the images
+```
+
+Ranking (in `models/fusion_ranker.py`): `0.50*CLIP + 0.25*tag_match + 0.15*intensity
++ 0.10*diversity − 0.20*recent_duplicate`, with flagged memes vetoed. Holding the same
+gesture rotates through different memes (diversity + recent-duplicate memory). Weights are
+hand-tuned now; Milestone 7 learns them from feedback.
 
 ## Replay a saved window offline
 
