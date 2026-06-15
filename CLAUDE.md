@@ -32,10 +32,11 @@ It is NOT `skeleton -> emotion -> meme`. That framing is brittle and forbidden.
 
 ## Current focus
 
-Milestone 1 (skeleton debugger + window logger) is DONE and verified. Now on **Milestone
-2**: skeleton features + rule-based gestures (broad visible-reaction categories). No memes,
-no face, no ML ranking yet. Do not skip ahead. If skeleton extraction is unstable,
-everything downstream is fake progress.
+Milestones 1–3 are DONE and verified. M1 = skeleton debugger + window logger; M2 =
+skeleton features + rule-based gestures (+ a learned hand classifier brought forward);
+M3 = meme DB (subset load → CLIP embeddings → auto-labeling → vector index → retrieval).
+Now on **Milestone 4**: skeleton → meme baseline — turn a gesture into an intent query,
+retrieve + rank memes, and show the first real demo. Do not skip ahead.
 
 ## Tech stack
 
@@ -108,6 +109,28 @@ meme-motion/
 - Reddit (PRAW) is viable: post titles from r/reactiongifs etc. double as free weak labels.
 - Legal reality: most memes are copyrighted (movie stills, celebrity photos, characters). Fine for a private/research MVP; flag `copyrighted_character` / `private_person` in metadata. The GIF-API route is the cleanest if this ever ships.
 
+## Meme DB / retrieval (Milestone 3 — built)
+
+The retrieval infra in `meme_db/`. One command builds everything:
+`uv run python -m meme_db.build_index --limit 200`.
+
+- `load_dataset.py` — pulls a HF subset (default `not-lain/meme-dataset`), saves images to
+  `data/memes/`. `--source`/`--limit` swap datasets without touching the rest.
+- `embed_memes.py` — `MemeEmbedder` (OpenCLIP `ViT-B-32 / laion2b_s34b_b79k`, image+text,
+  L2-normalized so inner product = cosine) and `VectorIndex`. **`VectorIndex` uses FAISS
+  when importable and falls back to an identical exact NumPy cosine search otherwise**
+  (CLAUDE.md flags faiss-cpu can fail under uv on Mac; for a few-hundred-meme bootstrap
+  brute force is instant). Source of truth on disk is `data/embeddings/memes.npy`.
+- `auto_label_memes.py` — CLIP **zero-shot** reaction tags + an `intensity` proxy over
+  `TAG_VOCABULARY` (no API key; reuses the loaded CLIP model). These feed the M4 ranking
+  `tag_match`/`intensity_match`. LLM labeling is the documented offline upgrade path.
+- `schema.py` — SQLite (`data/labels/memes.db`). Integer `id` == embedding row, so a
+  search hit maps straight to metadata. Stores `tags`, `intensity`, and the
+  `copyrighted_character`/`private_person` safety flags (M4 wires the veto).
+- `retrieve.py` — `retrieve(text, k)` (embeds an intent phrase) and `retrieve_by_vector(vec, k)`
+  (for M4's fused intent vector). Pure similarity + metadata join; ranking is M4.
+  CLI: `uv run python -m meme_db.retrieve "facepalm reaction"`.
+
 ## Ranking (Milestone 4+)
 
 ```
@@ -136,9 +159,9 @@ Per recommendation event: "Did one of the top 5 memes fit the moment?" → **Top
 ## Milestone order (do not reorder)
 
 1. Skeleton debugger + sequence logger ✅ done
-2. Skeleton features + rule-based gestures ← **current**
-3. Meme DB + (subset load →) auto-labeling + CLIP + FAISS
-4. Skeleton → meme baseline (first demo)
+2. Skeleton features + rule-based gestures ✅ done
+3. Meme DB + (subset load →) auto-labeling + CLIP + FAISS ✅ done
+4. Skeleton → meme baseline (first demo) ← **current**
 5. Face expression module (modifier only)
 6. Learned temporal motion encoder
 7. Fusion ranker + feedback loop

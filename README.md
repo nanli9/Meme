@@ -3,8 +3,11 @@
 A Mac-first prototype that reads body pose + facial expression, estimates expressive
 intent, and recommends reaction memes. See [`CLAUDE.md`](./CLAUDE.md) for the full design.
 
-> **Status: Sprint 1 / Milestone 1 only** — a real-time webcam skeleton debugger that
-> logs pose windows to disk. No memes, no face, no ML, no ranking yet.
+> **Status: Milestones 1–3 done.** Skeleton debugger + window logger (M1), skeleton
+> features + rule-based gestures with a learned hand classifier (M2), and the meme
+> retrieval DB — subset load → OpenCLIP embeddings → auto-labeling → vector index →
+> retrieval (M3). Next: M4 wires gestures → meme recommendations (first demo). No face,
+> no learned ranking yet.
 
 ## Setup
 
@@ -83,6 +86,29 @@ uv run python scripts/eval_ntu.py --data-dir /path/to/nturgbd_skeletons
 
 No public dataset covers `shrug`, `arms_wide`, `facepalm`, or `thinking` — tune those
 from your own saved windows.
+
+## Meme database & retrieval (Milestone 3)
+
+Build the retrieval DB end to end — pulls a small Hugging Face subset, embeds the images
+with OpenCLIP, auto-labels reaction tags (CLIP zero-shot), and writes SQLite metadata +
+a vector index. First run downloads the CLIP weights (~600 MB) and the dataset.
+
+```bash
+uv run python -m meme_db.build_index --limit 200      # --source <hf-dataset> to swap datasets
+```
+
+Then query it with an expressive-intent phrase (top-5 cosine, joined to metadata):
+
+```bash
+uv run python -m meme_db.retrieve "facepalm reaction"
+uv run python -m meme_db.retrieve "hype celebration" -k 8
+```
+
+Artifacts (all git-ignored): images in `data/memes/`, metadata in `data/labels/memes.db`,
+vectors in `data/embeddings/memes.npy`. Vector search uses **FAISS when available and an
+exact NumPy cosine search otherwise** — the pipeline runs either way (faiss-cpu can be
+finicky under uv on Mac). This is pure similarity + metadata; the scoring/diversity/safety
+ranking lands in Milestone 4.
 
 ## Replay a saved window offline
 

@@ -12,6 +12,11 @@ dependencies = [
     "pydantic>=2.13.4",
     "scikit-learn>=1.9.0",
     "streamlit>=1.58.0",
+    # Milestone 3 — meme DB / retrieval. open_clip_torch pulls torch (large, one-time).
+    # faiss-cpu is best-effort: meme_db falls back to an exact NumPy search if it's absent
+    # (CLAUDE.md notes faiss-cpu can fail under uv on Mac; conda is the documented escape).
+    "open-clip-torch>=2.24.0",
+    "faiss-cpu>=1.8.0",
 ]
 
 [dependency-groups]
