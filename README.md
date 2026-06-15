@@ -36,9 +36,27 @@ shipped over the websocket — use the native window for smooth playback):
 uv run streamlit run app/skeleton_debugger.py
 ```
 
-Both show: the live feed with the 13-joint overlay, live **FPS**, count of **visible
-landmarks** (/13), and current **buffer length** (/60), plus a save action that writes
-the last 60 frames to `data/sessions/*.npz`.
+Both show: the live feed with the skeleton overlay, live **FPS**, count of **visible
+landmarks** (/55, or /13 body-only), current **buffer length** (/60), the detected
+**gesture** (Milestone 2), plus a save action that writes the last 60 frames to
+`data/sessions/*.npz`.
+
+## Gestures (Milestone 2)
+
+The debugger labels a broad **visible-reaction** category from the rolling window
+(updated ~1×/sec, no flicker): `shrug`, `hype`, `arms_crossed`, `arms_wide`, `facepalm`,
+`thinking`, `wave`, `clap`, `thumbs_up`, `pointing`, `open_palm`, or `neutral`. This is a
+weak signal for later meme retrieval — not an emotion claim, not a meme ID.
+
+Label / tune against saved windows offline (no camera):
+
+```bash
+uv run python scripts/label_session.py            # newest session
+uv run python scripts/label_session.py --all      # every saved session
+```
+
+Rules live in `models/motion_rules.py`; features in `features/skeleton_features.py`.
+Thresholds are hand-tuned — expect to refine them against your own saved poses.
 
 ## Replay a saved window offline
 

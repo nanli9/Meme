@@ -32,7 +32,10 @@ It is NOT `skeleton -> emotion -> meme`. That framing is brittle and forbidden.
 
 ## Current focus
 
-Sprint 1 = Milestone 1 only: a real-time webcam skeleton debugger that logs windows to disk. No memes, no face, no emotion, no ML ranking yet. Do not skip ahead. If skeleton extraction is unstable, everything downstream is fake progress.
+Milestone 1 (skeleton debugger + window logger) is DONE and verified. Now on **Milestone
+2**: skeleton features + rule-based gestures (broad visible-reaction categories). No memes,
+no face, no ML ranking yet. Do not skip ahead. If skeleton extraction is unstable,
+everything downstream is fake progress.
 
 ## Tech stack
 
@@ -71,6 +74,20 @@ meme-motion/
   hands are in the same torso-normalized frame. Body-only mode (J=13) is still supported.
   Hand points use the hand's detection confidence as their visibility channel.
 
+## Gestures (Milestone 2)
+
+- Rule-based gestures map a normalized window → a broad **visible reaction** category.
+  This is a WEAK signal fed to meme retrieval (M4) — never an emotion claim, never a
+  direct meme ID.
+- Vocabulary: `shrug`, `hype`, `arms_crossed`, `arms_wide`, `facepalm`, `thinking`,
+  `wave`, `clap`, `thumbs_up`, `pointing`, `open_palm`, + `neutral` fallback. The three
+  finger gestures use the 55-joint hands.
+- Features in `features/skeleton_features.py`; hand-tuned rules + `GestureEstimate` +
+  `GestureStabilizer` in `models/motion_rules.py`. Thresholds are hand-tuned (tune with
+  `scripts/label_session.py`), learned later (M6/M7).
+- Cadence: gestures are computed over the 60-frame window and the displayed label updates
+  at most once every 1–2s with hysteresis (no per-frame flicker).
+
 ## Meme sourcing (read before building the DB)
 
 - **Bootstrap from existing labeled datasets, not a scraper.** Pull a SUBSET (~200–300) of a Hugging Face dataset to prove the pipeline runs end to end. Good candidates: `not-lain/meme-dataset` (image+text, 300 rows), `MemeCap` (~6.3K with post title + captions + visual metaphors), `harpreetsahota/memes-dataset`.
@@ -106,8 +123,8 @@ Per recommendation event: "Did one of the top 5 memes fit the moment?" → **Top
 
 ## Milestone order (do not reorder)
 
-1. Skeleton debugger + sequence logger ← **current**
-2. Skeleton features + rule-based gestures
+1. Skeleton debugger + sequence logger ✅ done
+2. Skeleton features + rule-based gestures ← **current**
 3. Meme DB + (subset load →) auto-labeling + CLIP + FAISS
 4. Skeleton → meme baseline (first demo)
 5. Face expression module (modifier only)

@@ -1,8 +1,9 @@
-"""Real-time webcam skeleton debugger (Milestone 1).
+"""Real-time webcam skeleton debugger (Milestones 1–2).
 
 Shows the live webcam feed with a skeleton overlay, live FPS, the count of visible
-landmarks, the current rolling-buffer length, and a "Save Window" button that writes
-the last 60 frames to ``data/sessions/`` as ``.npz``.
+landmarks, the current rolling-buffer length, the rule-based gesture estimate
+(Milestone 2), and a "Save Window" button that writes the last 60 frames to
+``data/sessions/`` as ``.npz``.
 
 Run with::
 
@@ -30,10 +31,14 @@ from capture.skeleton import (
 )
 from capture.webcam import Webcam, WebcamError
 from features.skeleton_buffer import WINDOW_SIZE, SkeletonBuffer
+from models.motion_rules import GestureStabilizer, estimate_gesture
+
+GESTURE_INTERVAL = 1.0  # seconds between gesture re-evaluations
 
 st.set_page_config(page_title="Skeleton Debugger", layout="wide")
-st.title("🦴 Skeleton Debugger — Milestone 1")
-st.caption("Live pose extraction + rolling 60-frame window logger. No memes, no face, no ML.")
+st.title("🦴 Skeleton Debugger — Milestones 1–2")
+st.caption("Live pose + hands, rolling 60-frame logger, and rule-based gestures. "
+           "Weak visible-reaction signal — no memes, no face, no emotion claims.")
 
 # --- Sidebar controls ------------------------------------------------------
 with st.sidebar:
@@ -67,14 +72,20 @@ if "buffer" not in st.session_state:
     )
 if "saved" not in st.session_state:
     st.session_state.saved = []
+if "stabilizer" not in st.session_state:
+    st.session_state.stabilizer = GestureStabilizer(min_interval=GESTURE_INTERVAL, persist=2)
+    st.session_state.last_gesture_eval = 0.0
+    st.session_state.gesture_label = "neutral"
+    st.session_state.gesture_conf = 0.0
 
 buffer: SkeletonBuffer = st.session_state.buffer
 
 # --- Layout placeholders ---------------------------------------------------
-m1, m2, m3 = st.columns(3)
+m1, m2, m3, m4 = st.columns(4)
 fps_box = m1.empty()
 vis_box = m2.empty()
 buf_box = m3.empty()
+gest_box = m4.empty()
 frame_box = st.empty()
 status_box = st.empty()
 saved_box = st.empty()
@@ -84,6 +95,8 @@ def render_metrics(fps: float, visible: int, buf_len: int) -> None:
     fps_box.metric("FPS", f"{fps:4.1f}")
     vis_box.metric("Visible landmarks", f"{visible} / {NUM_FULL_JOINTS}")
     buf_box.metric("Buffer length", f"{buf_len} / {WINDOW_SIZE}")
+    gest_box.metric("Gesture", st.session_state.gesture_label,
+                    f"{st.session_state.gesture_conf:.2f}")
 
 
 def render_saved() -> None:
@@ -113,6 +126,16 @@ def live_view(device: int, vis_threshold: float, normalize: bool, target_fps: in
 
     overlay = draw_full_skeleton(frame.copy(), landmarks, visibility_threshold=vis_threshold)
     frame_box.image(overlay, channels="BGR", use_container_width=True)
+
+    # Gesture estimate over the rolling window, throttled to ~1/sec.
+    now = time.time()
+    if len(buffer) >= WINDOW_SIZE // 2 and (now - st.session_state.last_gesture_eval) >= GESTURE_INTERVAL:
+        st.session_state.last_gesture_eval = now
+        est = estimate_gesture(buffer.window(), visibility_threshold=vis_threshold)
+        label = st.session_state.stabilizer.update(est, now)
+        st.session_state.gesture_label = label
+        if label == est.top:
+            st.session_state.gesture_conf = est.confidence
 
     visible = count_visible(landmarks, vis_threshold)
     render_metrics(cam.fps, visible, len(buffer))

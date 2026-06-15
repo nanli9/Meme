@@ -1,7 +1,8 @@
-"""Native OpenCV skeleton debugger (Milestone 1, fast path).
+"""Native OpenCV skeleton debugger (Milestones 1–2, fast path).
 
 Runs at full camera/inference speed (no browser overhead). Shows the live feed with
-the 13-joint overlay and a HUD (FPS, visible landmarks, buffer length).
+the skeleton overlay and a HUD (FPS, visible landmarks, buffer length) plus the
+rule-based gesture estimate (Milestone 2), updated ~once/second with no flicker.
 
     uv run python -m capture.debug_view
     uv run python -m capture.debug_view --device 1 --normalize
@@ -26,6 +27,9 @@ from capture.skeleton import (
 from capture.pose_mediapipe import NUM_JOINTS, PoseEstimator
 from capture.webcam import Webcam, WebcamError
 from features.skeleton_buffer import WINDOW_SIZE, SkeletonBuffer
+from models.motion_rules import GestureStabilizer, estimate_gesture
+
+GESTURE_INTERVAL = 1.0  # seconds between gesture re-evaluations (CLAUDE.md: <=1/1-2s)
 
 
 def _hud(frame, lines: list[str], *, color=(255, 255, 255)) -> None:
@@ -64,6 +68,10 @@ def main() -> None:
     )
     flash_until = 0.0
     flash_msg = ""
+    stabilizer = GestureStabilizer(min_interval=GESTURE_INTERVAL, persist=2)
+    last_gesture_eval = 0.0
+    gesture_label = "neutral"
+    gesture_conf = 0.0
 
     try:
         cam = Webcam(args.device, width=args.width, height=args.height).open()
@@ -87,10 +95,20 @@ def main() -> None:
             draw(frame, landmarks, visibility_threshold=args.vis)
 
             visible = count_visible(landmarks, args.vis)
+
+            # Gesture estimate over the rolling window, throttled to ~1/sec.
+            now = time.time()
+            if len(buffer) >= WINDOW_SIZE // 2 and (now - last_gesture_eval) >= GESTURE_INTERVAL:
+                last_gesture_eval = now
+                est = estimate_gesture(buffer.window(), visibility_threshold=args.vis)
+                gesture_label = stabilizer.update(est, now)
+                gesture_conf = est.confidence if gesture_label == est.top else gesture_conf
+
             _hud(frame, [
                 f"FPS: {cam.fps:4.1f}",
                 f"Visible landmarks: {visible} / {num_joints}",
                 f"Buffer: {len(buffer)} / {WINDOW_SIZE}",
+                f"Gesture: {gesture_label} ({gesture_conf:.2f})",
                 "s = save window   q = quit",
             ])
             if time.time() < flash_until:
