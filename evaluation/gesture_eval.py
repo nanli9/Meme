@@ -15,6 +15,7 @@ HAGRID_TO_GESTURE: dict[str, str] = {
     "one": "pointing",
     "palm": "open_palm",
     "stop": "open_palm",
+    "peace": "peace",
 }
 
 # NTU RGB+D 60 action code (Axxx in the filename) -> our gesture.

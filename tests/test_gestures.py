@@ -14,12 +14,13 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from capture.pose_mediapipe import J  # noqa: E402
-from capture.skeleton import LEFT_HAND_OFFSET, NUM_FULL_JOINTS  # noqa: E402
+from capture.skeleton import LEFT_HAND_OFFSET, NUM_FULL_JOINTS, RIGHT_HAND_OFFSET  # noqa: E402
 from features.skeleton_features import compute_features  # noqa: E402
 from models.motion_rules import GestureEstimate, GestureStabilizer, estimate_gesture  # noqa: E402
 
-_FINGER_IDX = {"thumb": (2, 3, 4), "index": (5, 6, 8),
-               "middle": (9, 10, 12), "ring": (13, 14, 16), "pinky": (17, 18, 20)}
+# Full landmark chains (base..tip) per finger, matching skeleton_features._FINGER_CHAINS.
+_FINGER_CHAINS = {"thumb": (1, 2, 3, 4), "index": (5, 6, 7, 8),
+                  "middle": (9, 10, 11, 12), "ring": (13, 14, 15, 16), "pinky": (17, 18, 19, 20)}
 
 
 def _set(win, idx, xy):
@@ -48,22 +49,20 @@ def arms_down(win):
     return win
 
 
-def set_hand(win, offset, extended: set, *, thumb_up=False, wx=0.5, wy=-1.0):
-    _set(win, offset + 0, (wx, wy))
-    for i in (1, 7, 11, 15, 19):
-        _set(win, offset + i, (wx, wy - 0.05))
-    cols = {"thumb": -0.15, "index": -0.05, "middle": 0.05, "ring": 0.15, "pinky": 0.25}
-    for fname, (mcp, pip, tip) in _FINGER_IDX.items():
+def set_hand(win, offset, extended: set, *, wx=0.5, wy=-0.3):
+    """Pose a 21-pt hand. Each finger's 4-joint chain is laid straight (extended) or
+    folded back toward the palm (curled), matching the chain-straightness extension
+    metric in skeleton_features."""
+    _set(win, offset + 0, (wx, wy))  # wrist
+    cols = {"thumb": -0.2, "index": -0.05, "middle": 0.05, "ring": 0.15, "pinky": 0.25}
+    for fname, chain in _FINGER_CHAINS.items():
         col = cols[fname]
-        _set(win, offset + mcp, (wx + col, wy - 0.1))
-        _set(win, offset + pip, (wx + col, wy - 0.2))
-        if fname == "thumb" and thumb_up and fname in extended:
-            tip_xy = (wx + col, wy - 0.4)
-        elif fname in extended:
-            tip_xy = (wx + col, wy - 0.35)
+        if fname in extended:
+            ys = [wy - 0.1, wy - 0.2, wy - 0.3, wy - 0.4]   # straight -> span/length ~ 1
         else:
-            tip_xy = (wx + col, wy - 0.05)  # curled: tip closer to wrist than pip
-        _set(win, offset + tip, tip_xy)
+            ys = [wy - 0.1, wy - 0.18, wy - 0.12, wy - 0.04]  # folded back -> small span
+        for local, yy in zip(chain, ys):
+            _set(win, offset + local, (wx + col, yy))
 
 
 def top(win):
@@ -105,14 +104,24 @@ def test_arms_crossed():
 
 # --- hand-to-face ----------------------------------------------------------
 def test_facepalm():
+    # Still hand at/above nose level -> facepalm.
     w = arms_down(base())
     _set(w, J["right_wrist"], (0.1, -1.4)); _set(w, J["right_elbow"], (-0.1, -0.8))
     assert top(w) == "facepalm"
 
 
 def test_thinking():
+    # Still hand at the chin (below nose) -> thinking.
     w = arms_down(base())
     _set(w, J["right_wrist"], (0.15, -0.95)); _set(w, J["right_elbow"], (-0.1, -0.6))
+    assert top(w) == "thinking"
+
+
+def test_point_at_own_head_is_thinking():
+    # Index finger up AT your own head (fingertip near the nose) reads as thinking, not
+    # pointing — only `pointing` is face-aware (surgical), other gestures are unaffected.
+    w = arms_down(base())
+    set_hand(w, RIGHT_HAND_OFFSET, {"index"}, wx=0.05, wy=-1.0)
     assert top(w) == "thinking"
 
 
@@ -163,16 +172,29 @@ def test_pointing():
 
 def test_thumbs_up():
     w = arms_down(base())
-    set_hand(w, LEFT_HAND_OFFSET, {"thumb"}, thumb_up=True)
+    set_hand(w, LEFT_HAND_OFFSET, {"thumb"})
     assert top(w) == "thumbs_up"
 
 
-def test_peace_is_not_pointing():
-    # Index + middle extended (peace) must NOT read as pointing — the suppression uses
-    # max() over the should-be-curled fingers, so an extended middle vetoes pointing.
+def test_middle_finger():
+    w = arms_down(base())
+    set_hand(w, LEFT_HAND_OFFSET, {"middle"})
+    assert top(w) == "middle_finger"
+
+
+def test_pinky():
+    w = arms_down(base())
+    set_hand(w, LEFT_HAND_OFFSET, {"pinky"})
+    assert top(w) == "pinky"
+
+
+def test_peace():
+    # Index + middle extended -> peace, and crucially NOT pointing (the extended middle
+    # vetoes pointing via the max() suppression).
     w = arms_down(base())
     set_hand(w, LEFT_HAND_OFFSET, {"index", "middle"})
-    assert top(w) != "pointing"
+    t = top(w)
+    assert t == "peace" and t != "pointing"
 
 
 # --- robustness ------------------------------------------------------------

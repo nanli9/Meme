@@ -80,8 +80,11 @@ meme-motion/
   This is a WEAK signal fed to meme retrieval (M4) — never an emotion claim, never a
   direct meme ID.
 - Vocabulary: `shrug`, `hype`, `arms_crossed`, `arms_wide`, `facepalm`, `thinking`,
-  `wave`, `clap`, `thumbs_up`, `pointing`, `open_palm`, + `neutral` fallback. The three
-  finger gestures use the 55-joint hands.
+  `wave`, `clap`, and finger gestures `thumbs_up`, `pointing`, `middle_finger`, `pinky`,
+  `peace`, `open_palm`, + `neutral` fallback. Finger gestures use the 55-joint hands;
+  each single-finger gesture needs its finger extended and the others curled. Context:
+  an index finger AT your own head reads as `thinking` (not `pointing`); a moving hand
+  near the face is `wave` (not `thinking`).
 - Features in `features/skeleton_features.py`; hand-tuned rules + `GestureEstimate` +
   `GestureStabilizer` in `models/motion_rules.py`. Thresholds are hand-tuned (tune with
   `scripts/label_session.py`), learned later (M6/M7).

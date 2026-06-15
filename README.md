@@ -45,8 +45,10 @@ landmarks** (/55, or /13 body-only), current **buffer length** (/60), the detect
 
 The debugger labels a broad **visible-reaction** category from the rolling window
 (updated ~1×/sec, no flicker): `shrug`, `hype`, `arms_crossed`, `arms_wide`, `facepalm`,
-`thinking`, `wave`, `clap`, `thumbs_up`, `pointing`, `open_palm`, or `neutral`. This is a
-weak signal for later meme retrieval — not an emotion claim, not a meme ID.
+`thinking`, `wave`, `clap`, `thumbs_up`, `pointing`, `middle_finger`, `pinky`, `peace`,
+`open_palm`, or `neutral`. This is a weak signal for later meme retrieval — not an emotion
+claim, not a meme ID. (Context-aware: an index finger at your own head reads as
+`thinking`; a hand moving near your face reads as `wave`.)
 
 Label / tune against saved windows offline (no camera):
 

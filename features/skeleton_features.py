@@ -20,14 +20,17 @@ from capture.pose_mediapipe import J
 from capture.skeleton import LEFT_HAND_OFFSET, RIGHT_HAND_OFFSET
 from features.skeleton_buffer import normalize_window
 
-# Finger -> (mcp/base, pip/mid, tip) indices within a 21-point hand.
-_FINGERS: dict[str, tuple[int, int, int]] = {
-    "thumb": (2, 3, 4),
-    "index": (5, 6, 8),
-    "middle": (9, 10, 12),
-    "ring": (13, 14, 16),
-    "pinky": (17, 18, 20),
+# Finger -> landmark chain (base, pip/ref, dip, tip) within a 21-point hand. A finger is
+# "extended" when its tip is farther from the wrist than its pip joint (for the thumb, its
+# mcp) — simple and empirically the most reliable in 2D image coords.
+_FINGER_CHAINS: dict[str, tuple[int, ...]] = {
+    "thumb": (1, 2, 3, 4),
+    "index": (5, 6, 7, 8),
+    "middle": (9, 10, 11, 12),
+    "ring": (13, 14, 15, 16),
+    "pinky": (17, 18, 19, 20),
 }
+_EXTEND_FACTOR = 1.05  # tip-to-wrist must exceed ref-to-wrist by this factor to be extended
 _HAND_WRIST = 0
 _INDEX_MCP = 5
 _MIDDLE_MCP = 9
@@ -40,6 +43,7 @@ class HandFeatures:
     extended: dict[str, float] = field(default_factory=dict)  # finger -> fraction extended
     thumb_up: float = 0.0                    # fraction of frames thumb tip is above index MCP
     spread: float = 0.0                      # fingertip spread / hand size (median)
+    to_nose: float = float("nan")            # min(wrist/index-tip/middle-tip)->nose distance
 
     def is_extended(self, finger: str, thr: float = 0.5) -> bool:
         return self.extended.get(finger, 0.0) >= thr
@@ -119,34 +123,32 @@ def _count_sign_changes(dx: np.ndarray, *, mask: np.ndarray, min_mag: float) -> 
 
 def _hand_features(window: np.ndarray, offset: int, thr: float) -> HandFeatures:
     if window.shape[1] < offset + NUM_HAND_LANDMARKS:
-        return HandFeatures(extended={k: 0.0 for k in _FINGERS})
+        return HandFeatures(extended={k: 0.0 for k in _FINGER_CHAINS})
 
     vis = window[:, offset:offset + NUM_HAND_LANDMARKS, 3]
     present_mask = np.median(vis, axis=1) >= thr  # per-frame hand presence
     n = int(present_mask.sum())
-    hf = HandFeatures(present=float(np.mean(present_mask)), extended={k: 0.0 for k in _FINGERS})
+    hf = HandFeatures(present=float(np.mean(present_mask)), extended={k: 0.0 for k in _FINGER_CHAINS})
     if n == 0:
         return hf
 
-    def hxy(local_idx: int) -> np.ndarray:
-        return _xy(window, offset + local_idx, thr)
+    pts = {i: _xy(window, offset + i, thr) for i in range(NUM_HAND_LANDMARKS)}
+    wrist = pts[_HAND_WRIST]
 
-    wrist = hxy(_HAND_WRIST)
     extended_frac: dict[str, float] = {}
-    for name, (mcp, pip, tip) in _FINGERS.items():
-        d_tip = _dist(hxy(tip), wrist)
-        d_pip = _dist(hxy(pip if name != "thumb" else mcp), wrist)
-        ext = (d_tip > d_pip * 1.05) & present_mask
-        valid = np.isfinite(d_tip) & np.isfinite(d_pip) & present_mask
+    for name, chain in _FINGER_CHAINS.items():
+        d_tip = _dist(pts[chain[-1]], wrist)
+        d_ref = _dist(pts[chain[1]], wrist)  # pip (thumb: mcp)
+        ext = (d_tip > d_ref * _EXTEND_FACTOR) & present_mask
+        valid = np.isfinite(d_tip) & np.isfinite(d_ref) & present_mask
         extended_frac[name] = float(ext.sum() / max(1, int(valid.sum())))
     hf.extended = extended_frac
 
-    thumb_tip, index_mcp = hxy(_FINGERS["thumb"][2]), hxy(_INDEX_MCP)
-    up = (thumb_tip[:, 1] < index_mcp[:, 1]) & present_mask  # y is image-down
+    up = (pts[_FINGER_CHAINS["thumb"][-1]][:, 1] < pts[_INDEX_MCP][:, 1]) & present_mask  # y down
     hf.thumb_up = float(up.sum() / max(1, n))
 
-    hand_size = _dist(hxy(_MIDDLE_MCP), wrist)
-    spread = _dist(hxy(_FINGERS["index"][2]), hxy(_PINKY_TIP)) / np.where(hand_size > 1e-6, hand_size, np.nan)
+    hand_size = _dist(pts[_MIDDLE_MCP], pts[_HAND_WRIST])
+    spread = _dist(pts[_FINGER_CHAINS["index"][-1]], pts[_PINKY_TIP]) / np.where(hand_size > 1e-6, hand_size, np.nan)
     hf.spread = _nanmedian(spread)
     return hf
 
@@ -215,4 +217,16 @@ def compute_features(
     # Fingers
     f.left_hand = _hand_features(window, LEFT_HAND_OFFSET, thr)
     f.right_hand = _hand_features(window, RIGHT_HAND_OFFSET, thr)
+
+    # How close is each hand to the face? Use the nearest of wrist / index-tip / middle-tip
+    # to the nose — a tight, fingertip-level signal (a hand genuinely at the face), not the
+    # loose body-wrist proxy.
+    def _hand_to_nose(offset: int) -> float:
+        if window.shape[1] < offset + NUM_HAND_LANDMARKS:
+            return float("nan")
+        d = np.minimum.reduce([_dist(_xy(window, offset + i, thr), nose) for i in (0, 8, 12)])
+        return _nanmedian(d)
+
+    f.left_hand.to_nose = _hand_to_nose(LEFT_HAND_OFFSET)
+    f.right_hand.to_nose = _hand_to_nose(RIGHT_HAND_OFFSET)
     return f
