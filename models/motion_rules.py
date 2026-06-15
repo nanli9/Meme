@@ -28,12 +28,16 @@ GESTURES = (
 )
 
 
+_FINGER_ORDER = ("thumb", "index", "middle", "ring", "pinky")
+
+
 class GestureEstimate(BaseModel):
     top: str = "neutral"
     confidence: float = 0.0
     intensity: float = 0.0
     valid_ratio: float = 0.0
     scores: dict[str, float] = Field(default_factory=dict)
+    fingers: list[str] = Field(default_factory=list)  # extended fingers of the best hand
 
 
 # --- soft threshold helpers (NaN-safe -> 0) --------------------------------
@@ -51,6 +55,15 @@ def _inv_ramp(x: float, lo: float, hi: float) -> float:
     if x is None or (isinstance(x, float) and math.isnan(x)):
         return 0.0
     return 1.0 - _ramp(x, lo, hi)
+
+
+def _depth_ok(dz: float) -> float:
+    """Depth-consistency gate for hand-at-face: 1 when the wrist and nose are at a similar
+    pose-frame depth, ramping to 0 as the gap grows. Unknown depth (NaN) -> 1 (permissive,
+    so missing/unreliable z never kills a face gesture)."""
+    if dz is None or (isinstance(dz, float) and math.isnan(dz)):
+        return 1.0
+    return _inv_ramp(dz, 0.2, 0.5)
 
 
 def _band(x: float, center: float, half: float) -> float:
@@ -88,13 +101,14 @@ def _score_gestures(f: SkeletonFeatures) -> dict[str, float]:
     # Hand-to-face: nearest STILL hand to the nose. facepalm = at/above nose; thinking =
     # below (chin). A moving hand near the face is a wave, not thinking (the stillness gate).
     face, think = [], []
-    for d_nose, h_height, spd, osc in (
-        (f.wrist_to_nose_l, f.hand_face_height_l, f.wrist_speed_l, f.wrist_x_oscillations_l),
-        (f.wrist_to_nose_r, f.hand_face_height_r, f.wrist_speed_r, f.wrist_x_oscillations_r),
+    for d_nose, h_height, spd, osc, dz in (
+        (f.wrist_to_nose_l, f.hand_face_height_l, f.wrist_speed_l, f.wrist_x_oscillations_l, f.wrist_nose_dz_l),
+        (f.wrist_to_nose_r, f.hand_face_height_r, f.wrist_speed_r, f.wrist_x_oscillations_r, f.wrist_nose_dz_r),
     ):
         still = _inv_ramp(spd, 0.05, 0.12) * _inv_ramp(osc, 1, 3)
-        face.append(_inv_ramp(d_nose, 0.3, 0.65) * _ramp(h_height, -0.15, 0.2) * still)
-        think.append(_inv_ramp(d_nose, 0.45, 0.85) * _band(h_height, -0.4, 0.35) * still)
+        depth = _depth_ok(dz)  # the hand must be at the face in DEPTH too, not just on-screen
+        face.append(_inv_ramp(d_nose, 0.3, 0.65) * _ramp(h_height, -0.15, 0.2) * still * depth)
+        think.append(_inv_ramp(d_nose, 0.45, 0.85) * _band(h_height, -0.4, 0.35) * still * depth)
     s["facepalm"] = max(face)
     s["thinking"] = max(think)
 
@@ -118,7 +132,8 @@ def _score_gestures(f: SkeletonFeatures) -> dict[str, float]:
     def only(target: str, others: tuple[str, ...]) -> float:
         return _ramp(ext.get(target, 0.0), 0.4, 0.7) * _inv_ramp(max(ext.get(o, 0.0) for o in others), 0.4, 0.7)
 
-    at_head = _inv_ramp(hand.to_nose, 0.15, 0.28)  # 1 only when the finger is right at the head
+    _dzs = [d for d in (f.wrist_nose_dz_l, f.wrist_nose_dz_r) if not math.isnan(d)]
+    at_head = _inv_ramp(hand.to_nose, 0.15, 0.28) * _depth_ok(min(_dzs) if _dzs else float("nan"))
     point_raw = pf * only("index", ("middle", "ring", "pinky"))
     s["pointing"] = point_raw * (1.0 - at_head)
     s["thinking"] = max(s["thinking"], point_raw * at_head)  # index at own head -> thinking
@@ -136,13 +151,15 @@ def _score_gestures(f: SkeletonFeatures) -> dict[str, float]:
 def classify(features: SkeletonFeatures) -> GestureEstimate:
     """Map features to a ranked gesture estimate."""
     scores = _score_gestures(features)
+    hand = features.best_hand()
+    fingers = ([name for name in _FINGER_ORDER if hand.extended.get(name, 0.0) >= 0.5]
+               if hand.present >= 0.4 else [])
     top = max(scores, key=scores.get) if scores else "neutral"
     top_score = scores.get(top, 0.0)
     if features.valid_ratio < 0.2 or top_score < CONFIDENCE_FLOOR:
-        return GestureEstimate(top="neutral", confidence=top_score, intensity=top_score,
-                               valid_ratio=features.valid_ratio, scores=scores)
+        top = "neutral"
     return GestureEstimate(top=top, confidence=top_score, intensity=top_score,
-                           valid_ratio=features.valid_ratio, scores=scores)
+                           valid_ratio=features.valid_ratio, scores=scores, fingers=fingers)
 
 
 def estimate_gesture(window, *, visibility_threshold: float = 0.5,

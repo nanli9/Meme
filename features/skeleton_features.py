@@ -69,6 +69,8 @@ class SkeletonFeatures:
     wrist_to_nose_r: float = np.nan
     hand_face_height_l: float = np.nan       # nose_y - wrist_y (>0 => wrist above nose)
     hand_face_height_r: float = np.nan
+    wrist_nose_dz_l: float = np.nan          # |wrist_z - nose_z| in the pose frame (depth gap)
+    wrist_nose_dz_r: float = np.nan
     # motion (per-frame, torso units)
     wrist_speed_l: float = 0.0
     wrist_speed_r: float = 0.0
@@ -89,6 +91,13 @@ def _xy(window: np.ndarray, j: int, thr: float) -> np.ndarray:
     pts = window[:, j, :2].astype(np.float64).copy()
     pts[window[:, j, 3] < thr] = np.nan
     return pts
+
+
+def _z(window: np.ndarray, j: int, thr: float) -> np.ndarray:
+    """[T] z (pose-frame depth) for joint j, NaN where below visibility threshold."""
+    z = window[:, j, 2].astype(np.float64).copy()
+    z[window[:, j, 3] < thr] = np.nan
+    return z
 
 
 def _nanmedian(a: np.ndarray) -> float:
@@ -189,6 +198,12 @@ def compute_features(
     f.wrist_to_nose_r = _nanmedian(_dist(rw, nose))
     f.hand_face_height_l = _nanmedian(nose[:, 1] - lw[:, 1])
     f.hand_face_height_r = _nanmedian(nose[:, 1] - rw[:, 1])
+
+    # Depth gap between each wrist and the nose (pose-frame z). Large => the hand is in
+    # front of / behind the face, not actually at it (resolves the 2D "looks close" issue).
+    nose_z = _z(window, J["nose"], thr)
+    f.wrist_nose_dz_l = _nanmedian(np.abs(_z(window, J["left_wrist"], thr) - nose_z))
+    f.wrist_nose_dz_r = _nanmedian(np.abs(_z(window, J["right_wrist"], thr) - nose_z))
 
     # wrists crossed: wrist L/R x-order reversed vs shoulders, near chest, close together
     sho_order = np.sign(ls[:, 0] - rs[:, 0])

@@ -72,6 +72,7 @@ def main() -> None:
     last_gesture_eval = 0.0
     gesture_label = "neutral"
     gesture_conf = 0.0
+    fingers_str = "-"
 
     try:
         cam = Webcam(args.device, width=args.width, height=args.height).open()
@@ -103,12 +104,14 @@ def main() -> None:
                 est = estimate_gesture(buffer.window(), visibility_threshold=args.vis)
                 gesture_label = stabilizer.update(est, now)
                 gesture_conf = est.confidence if gesture_label == est.top else gesture_conf
+                fingers_str = ("+".join(est.fingers) if est.fingers else "-") if use_hands else "n/a"
 
             _hud(frame, [
                 f"FPS: {cam.fps:4.1f}",
                 f"Visible landmarks: {visible} / {num_joints}",
                 f"Buffer: {len(buffer)} / {WINDOW_SIZE}",
                 f"Gesture: {gesture_label} ({gesture_conf:.2f})",
+                f"Fingers up: {fingers_str}",
                 "s = save window   q = quit",
             ])
             if time.time() < flash_until:

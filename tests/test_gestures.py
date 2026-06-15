@@ -176,6 +176,14 @@ def test_thumbs_up():
     assert top(w) == "thumbs_up"
 
 
+def test_fingers_reported_explicitly():
+    w = arms_down(base())
+    set_hand(w, LEFT_HAND_OFFSET, {"index", "middle"})
+    est = estimate_gesture(w, assume_normalized=True)
+    assert "index" in est.fingers and "middle" in est.fingers
+    assert "ring" not in est.fingers and "pinky" not in est.fingers
+
+
 def test_middle_finger():
     w = arms_down(base())
     set_hand(w, LEFT_HAND_OFFSET, {"middle"})
