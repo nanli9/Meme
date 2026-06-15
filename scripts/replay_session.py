@@ -1,8 +1,9 @@
-"""Replay a saved skeleton window offline (Milestone 1, acceptance criterion 7).
+"""Replay a saved skeleton window offline (Milestones 1–2).
 
 Loads a ``.npz`` window written by the debugger and re-draws the skeleton frame by
-frame on a blank canvas at the saved FPS. Works headless too (``--no-display``),
-in which case it just validates and prints a summary.
+frame on a blank canvas at the saved FPS, with the **predicted gesture overlaid** so you
+can visually confirm the label matches the pose. Loops until you press 'q'. Works
+headless too (``--no-display``), in which case it just validates and prints a summary.
 
 Examples::
 
@@ -24,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from capture.pose_mediapipe import NUM_CHANNELS, NUM_JOINTS  # noqa: E402
 from capture.skeleton import draw_full_skeleton  # noqa: E402
+from models.motion_rules import estimate_gesture  # noqa: E402
 
 SESSION_DIR = Path(__file__).resolve().parent.parent / "data" / "sessions"
 
@@ -64,6 +66,16 @@ def summarize(path: Path, win: dict) -> None:
     print(f"Normalized:  {win['normalized']}")
     print(f"Visible joints/frame: min={visible_per_frame.min()} "
           f"mean={visible_per_frame.mean():.1f} max={visible_per_frame.max()}")
+    est = estimate_gesture(lm, assume_normalized=win["normalized"])
+    ranked = sorted(est.scores.items(), key=lambda kv: kv[1], reverse=True)
+    print(f"Gesture:     {est.top}  (confidence {est.confidence:.2f})")
+    print("Top scores:  " + "  ".join(f"{n}={s:.2f}" for n, s in ranked[:3]))
+
+
+def _text(frame, txt, org, color, scale=0.7, thick=1):
+    import cv2
+    cv2.putText(frame, txt, org, cv2.FONT_HERSHEY_SIMPLEX, scale, (0, 0, 0), thick + 3, cv2.LINE_AA)
+    cv2.putText(frame, txt, org, cv2.FONT_HERSHEY_SIMPLEX, scale, color, thick, cv2.LINE_AA)
 
 
 def replay(win: dict, *, canvas: int = 720, speed: float = 1.0) -> None:
@@ -74,21 +86,30 @@ def replay(win: dict, *, canvas: int = 720, speed: float = 1.0) -> None:
     fps = win["fps"] if win["fps"] > 0 else 30.0
     delay = max(1, int(1000.0 / (fps * speed)))
 
-    print("Press 'q' to quit, any other key to step a frame faster.")
-    for t in range(lm.shape[0]):
-        frame = np.zeros((canvas, canvas, 3), dtype=np.uint8)
-        coords = lm[t].copy()
-        if normalized:
-            # Map torso-normalized coords (~[-1.5, 1.5]) back into [0,1] for display.
-            coords[:, 0] = coords[:, 0] * 0.25 + 0.5
-            coords[:, 1] = coords[:, 1] * 0.25 + 0.5
-        draw_full_skeleton(frame, coords, visibility_threshold=0.5)
-        cv2.putText(frame, f"frame {t+1}/{lm.shape[0]}", (10, 30),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 1, cv2.LINE_AA)
-        cv2.imshow("skeleton replay", frame)
-        if cv2.waitKey(delay) & 0xFF == ord("q"):
-            break
-    cv2.destroyAllWindows()
+    # One gesture estimate for the whole window (matches how the live debugger labels it).
+    est = estimate_gesture(lm, assume_normalized=normalized)
+    ranked = sorted(est.scores.items(), key=lambda kv: kv[1], reverse=True)[:3]
+
+    print("Looping replay. Press 'q' to quit.")
+    while True:
+        for t in range(lm.shape[0]):
+            frame = np.zeros((canvas, canvas, 3), dtype=np.uint8)
+            coords = lm[t].copy()
+            if normalized:
+                # Map torso-normalized coords (~[-1.5, 1.5]) back into [0,1] for display.
+                coords[:, 0] = coords[:, 0] * 0.25 + 0.5
+                coords[:, 1] = coords[:, 1] * 0.25 + 0.5
+            draw_full_skeleton(frame, coords, visibility_threshold=0.5)
+
+            _text(frame, f"GESTURE: {est.top}  ({est.confidence:.2f})", (10, 34), (0, 255, 0), 0.9, 2)
+            for i, (n, s) in enumerate(ranked):
+                _text(frame, f"{n}: {s:.2f}", (10, 70 + i * 26), (200, 200, 200), 0.6)
+            _text(frame, f"frame {t+1}/{lm.shape[0]}   q=quit", (10, canvas - 16), (255, 255, 255), 0.6)
+
+            cv2.imshow("skeleton replay", frame)
+            if cv2.waitKey(delay) & 0xFF == ord("q"):
+                cv2.destroyAllWindows()
+                return
 
 
 def main() -> None:
