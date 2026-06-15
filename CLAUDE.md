@@ -87,6 +87,11 @@ meme-motion/
   `scripts/label_session.py`), learned later (M6/M7).
 - Cadence: gestures are computed over the 60-frame window and the displayed label updates
   at most once every 1–2s with hysteresis (no per-frame flicker).
+- Labeled eval: `scripts/eval_hagrid.py` (HaGRID images → finger gestures) and
+  `scripts/eval_ntu.py` (NTU RGB+D skeletons, access-gated → body gestures); label maps in
+  `evaluation/gesture_eval.py`. No public set covers `shrug`/`arms_wide`/`facepalm`/
+  `thinking` — tune those from self-recorded windows. Visually verify any saved window
+  with `scripts/replay_session.py` (gesture overlaid on the replayed skeleton).
 
 ## Meme sourcing (read before building the DB)
 

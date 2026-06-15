@@ -58,6 +58,23 @@ uv run python scripts/label_session.py --all      # every saved session
 Rules live in `models/motion_rules.py`; features in `features/skeleton_features.py`.
 Thresholds are hand-tuned — expect to refine them against your own saved poses.
 
+### Evaluate against labeled datasets
+
+Instead of posing everything by hand, run the rules over public labeled data and get a
+confusion report (`evaluation/gesture_eval.py` holds the label maps):
+
+```bash
+# Finger gestures (thumbs_up / pointing / open_palm) — HaGRID images, auto-downloaded (~1GB, cached)
+uv run python scripts/eval_hagrid.py --limit-per-class 150
+
+# Body/motion gestures (wave / clap / arms_crossed / pointing) — NTU RGB+D 60 skeletons
+# NTU is access-gated: request at https://rose1.ntu.edu.sg/dataset/actionRecognition/
+uv run python scripts/eval_ntu.py --data-dir /path/to/nturgbd_skeletons
+```
+
+No public dataset covers `shrug`, `arms_wide`, `facepalm`, or `thinking` — tune those
+from your own saved windows.
+
 ## Replay a saved window offline
 
 ```bash
